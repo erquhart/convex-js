@@ -7,6 +7,9 @@ import jwtDecode from "jwt-decode";
 // schedule about 24 days in the future.
 const MAXIMUM_REFRESH_DELAY = 20 * 24 * 60 * 60 * 1000; // 20 days
 
+// Timeout for waiting for server confirmation of a token
+const SERVER_CONFIRMATION_TIMEOUT_MS = 8000;
+
 /**
  * An async function returning the JWT-encoded OpenID Connect Identity Token
  * if available.
@@ -80,6 +83,9 @@ export class AuthenticationManager {
   // Used to detect races involving `setConfig` calls
   // while a token is being fetched.
   private configVersion = 0;
+  private waitingForServerConfirmationTimeoutId: ReturnType<
+    typeof setTimeout
+  > | null = null;
   // Shared by the BaseClient so that the auth manager can easily inspect it
   private readonly syncState: LocalSyncState;
   // Passed down by BaseClient, sends a message to the server
@@ -110,6 +116,7 @@ export class AuthenticationManager {
     this.clearAuth = callbacks.clearAuth;
     this.logger = config.logger;
     this.refreshTokenLeewaySeconds = config.refreshTokenLeewaySeconds;
+    this.waitingForServerConfirmationTimeoutId = null;
   }
 
   async setConfig(
@@ -131,6 +138,7 @@ export class AuthenticationManager {
         config: { fetchToken, onAuthChange: onChange },
         hasRetried: false,
       });
+      this.waitForServerConfirmation(onChange);
       this.authenticate(token.value);
       this._logVerbose("resuming WS after auth token fetch");
       this.resumeSocket();
@@ -163,12 +171,14 @@ export class AuthenticationManager {
 
     if (this.authState.state === "waitingForServerConfirmationOfCachedToken") {
       this._logVerbose("server confirmed auth token is valid");
+      this.clearWaitForServerConfirmation();
       void this.refetchToken();
       this.authState.config.onAuthChange(true);
       return;
     }
     if (this.authState.state === "waitingForServerConfirmationOfFreshToken") {
       this._logVerbose("server confirmed new auth token is valid");
+      this.clearWaitForServerConfirmation();
       this.scheduleTokenRefetch(this.authState.token);
       if (!this.authState.hadAuth) {
         this.authState.config.onAuthChange(true);
@@ -177,6 +187,18 @@ export class AuthenticationManager {
   }
 
   onAuthError(serverMessage: AuthError) {
+    // If auth error comes from a query/mutation/action and the client
+    // is waiting for the server to confirm a token, ignore.
+    // TODO: This shouldn't rely on a specific error text, make less brittle.
+    // May require backend changes.
+    if (
+      serverMessage.error === "Convex token identity expired" &&
+      (this.authState.state === "waitingForServerConfirmationOfFreshToken" ||
+        this.authState.state === "waitingForServerConfirmationOfCachedToken")
+    ) {
+      this.waitForServerConfirmation(this.authState.config.onAuthChange);
+      return;
+    }
     const { baseVersion } = serverMessage;
     // Versioned AuthErrors are ignored if the client advanced to
     // a newer auth identity
@@ -402,6 +424,23 @@ export class AuthenticationManager {
       this.syncState.markAuthCompletion();
     }
     this.authState = newAuth;
+  }
+
+  private waitForServerConfirmation(
+    onAuthChange: (authenticated: boolean) => void,
+  ) {
+    this.waitingForServerConfirmationTimeoutId =
+      this.waitingForServerConfirmationTimeoutId ??
+      setTimeout(() => {
+        void this.setAndReportAuthFailed(onAuthChange);
+      }, SERVER_CONFIRMATION_TIMEOUT_MS);
+  }
+
+  private clearWaitForServerConfirmation() {
+    if (this.waitingForServerConfirmationTimeoutId) {
+      clearTimeout(this.waitingForServerConfirmationTimeoutId);
+      this.waitingForServerConfirmationTimeoutId = null;
+    }
   }
 
   private decodeToken(token: string) {
