@@ -263,8 +263,6 @@ export class BaseConvexClient {
           const message = this.state.setAuth(token);
           this.webSocketManager.sendMessage(message);
         },
-        stopSocket: () => this.webSocketManager.stop(),
-        restartSocket: () => this.webSocketManager.restart(),
         pauseSocket: () => {
           this.webSocketManager.pause();
           this.state.pause();

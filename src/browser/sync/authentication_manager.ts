@@ -84,8 +84,6 @@ export class AuthenticationManager {
   private readonly syncState: LocalSyncState;
   // Passed down by BaseClient, sends a message to the server
   private readonly authenticate: (token: string) => void;
-  private readonly stopSocket: () => Promise<void>;
-  private readonly restartSocket: () => void;
   private readonly pauseSocket: () => void;
   private readonly resumeSocket: () => void;
   // Passed down by BaseClient, sends a message to the server
@@ -96,8 +94,6 @@ export class AuthenticationManager {
     syncState: LocalSyncState,
     callbacks: {
       authenticate: (token: string) => void;
-      stopSocket: () => Promise<void>;
-      restartSocket: () => void;
       pauseSocket: () => void;
       resumeSocket: () => void;
       clearAuth: () => void;
@@ -109,8 +105,6 @@ export class AuthenticationManager {
   ) {
     this.syncState = syncState;
     this.authenticate = callbacks.authenticate;
-    this.stopSocket = callbacks.stopSocket;
-    this.restartSocket = callbacks.restartSocket;
     this.pauseSocket = callbacks.pauseSocket;
     this.resumeSocket = callbacks.resumeSocket;
     this.clearAuth = callbacks.clearAuth;
@@ -225,7 +219,7 @@ export class AuthenticationManager {
       return;
     }
     this._logVerbose("attempting to reauthenticate");
-    await this.stopSocket();
+    this.pauseSocket();
     const token = await this.fetchTokenAndGuardAgainstRace(
       this.authState.config.fetchToken,
       {
@@ -253,7 +247,7 @@ export class AuthenticationManager {
       }
       this.setAndReportAuthFailed(this.authState.config.onAuthChange);
     }
-    this.restartSocket();
+    this.resumeSocket();
   }
 
   // Force refetch the token and schedule another refetch

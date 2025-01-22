@@ -158,6 +158,15 @@ export class WebSocketManager {
     this.connect();
   }
 
+  private setSocketState(state: Socket) {
+    this.socket = state;
+    this._logVerbose(
+      `socket state: ${this.socket.state}, paused: ${
+        "paused" in this.socket ? this.socket.paused : undefined
+      }`,
+    );
+  }
+
   private connect() {
     if (this.socket.state === "terminated") {
       return;
@@ -173,11 +182,11 @@ export class WebSocketManager {
 
     const ws = new this.webSocketConstructor(this.uri);
     this._logVerbose("constructed WebSocket");
-    this.socket = {
+    this.setSocketState({
       state: "connecting",
       ws,
       paused: "no",
-    };
+    });
 
     // Kick off server inactivity timer before WebSocket connection is established
     // so we can detect cases where handshake fails.
@@ -190,11 +199,11 @@ export class WebSocketManager {
       if (this.socket.state !== "connecting") {
         throw new Error("onopen called with socket not in connecting state");
       }
-      this.socket = {
+      this.setSocketState({
         state: "ready",
         ws,
         paused: this.socket.paused === "yes" ? "uninitialized" : "no",
-      };
+      });
       this.resetServerInactivityTimeout();
       if (this.socket.paused === "no") {
         this.onOpen({
@@ -293,7 +302,7 @@ export class WebSocketManager {
   }
 
   private scheduleReconnect() {
-    this.socket = { state: "disconnected" };
+    this.setSocketState({ state: "disconnected" });
     const backoff = this.nextBackoff();
     this.logger.log(`Attempting reconnect in ${backoff}ms`);
     setTimeout(() => this.connect(), backoff);
@@ -388,7 +397,8 @@ export class WebSocketManager {
       case "connecting":
       case "ready": {
         const result = this.close();
-        this.socket = { state: "terminated" };
+        this.setSocketState({ state: "terminated" });
+        this._logVerbose(`socket state: ${this.socket.state}, paused: 'no'`);
         return result;
       }
       default: {
@@ -401,50 +411,6 @@ export class WebSocketManager {
     }
   }
 
-  stop(): Promise<void> {
-    switch (this.socket.state) {
-      case "terminated":
-        // If we're terminating we ignore stop
-        return Promise.resolve();
-      case "connecting":
-      case "stopped":
-      case "disconnected":
-      case "ready": {
-        const result = this.close();
-        this.socket = { state: "stopped" };
-        return result;
-      }
-      default: {
-        // Enforce that the switch-case is exhaustive.
-        const _: never = this.socket;
-        return Promise.resolve();
-      }
-    }
-  }
-
-  /**
-   * Create a new WebSocket after a previous `stop()`, unless `terminate()` was
-   * called before.
-   */
-  restart(): void {
-    switch (this.socket.state) {
-      case "stopped":
-        break;
-      case "terminated":
-        // If we're terminating we ignore restart
-        return;
-      case "connecting":
-      case "ready":
-      case "disconnected":
-        throw new Error("`restart()` is only valid after `stop()`");
-      default: {
-        // Enforce that the switch-case is exhaustive.
-        const _: never = this.socket;
-      }
-    }
-    this.connect();
-  }
-
   pause(): void {
     switch (this.socket.state) {
       case "disconnected":
@@ -454,7 +420,7 @@ export class WebSocketManager {
         return;
       case "connecting":
       case "ready": {
-        this.socket = { ...this.socket, paused: "yes" };
+        this.setSocketState({ ...this.socket, paused: "yes" });
         return;
       }
       default: {
@@ -471,17 +437,17 @@ export class WebSocketManager {
   resume(): void {
     switch (this.socket.state) {
       case "connecting":
-        this.socket = { ...this.socket, paused: "no" };
+        this.setSocketState({ ...this.socket, paused: "no" });
         return;
       case "ready":
         if (this.socket.paused === "uninitialized") {
-          this.socket = { ...this.socket, paused: "no" };
+          this.setSocketState({ ...this.socket, paused: "no" });
           this.onOpen({
             connectionCount: this.connectionCount,
             lastCloseReason: this.lastCloseReason,
           });
         } else if (this.socket.paused === "yes") {
-          this.socket = { ...this.socket, paused: "no" };
+          this.setSocketState({ ...this.socket, paused: "no" });
           this.onResume();
         }
         return;
