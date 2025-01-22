@@ -161,7 +161,7 @@ export class WebSocketManager {
   private setSocketState(state: Socket) {
     this.socket = state;
     this._logVerbose(
-      `socket state: ${this.socket.state}, paused: ${
+      `socket state changed: ${this.socket.state}, paused: ${
         "paused" in this.socket ? this.socket.paused : undefined
       }`,
     );
@@ -268,8 +268,14 @@ export class WebSocketManager {
    * @returns Whether the message (might have been) sent.
    */
   sendMessage(message: ClientMessage) {
-    this._logVerbose(`sending message with type ${message.type}`);
-
+    const messageForLog = {
+      type: message.type,
+      ...(message.type === "Authenticate" && message.tokenType === "User"
+        ? {
+            value: message.value.slice(0, 7) + "..." + message.value.slice(-7),
+          }
+        : {}),
+    };
     if (this.socket.state === "ready" && this.socket.paused === "no") {
       const encodedMessage = encodeClientMessage(message);
       const request = JSON.stringify(encodedMessage);
@@ -282,8 +288,19 @@ export class WebSocketManager {
         this.closeAndReconnect("FailedToSendMessage");
       }
       // We are not sure if this was sent or not.
+      this._logVerbose(
+        `sent message with type ${message.type}: ${JSON.stringify(
+          messageForLog,
+        )}`,
+      );
       return true;
     }
+    this._logVerbose(
+      `message not sent (socket state: ${this.socket.state}, paused: ${"paused" in this.socket ? this.socket.paused : undefined}): ${JSON.stringify(
+        messageForLog,
+      )}`,
+    );
+
     return false;
   }
 
@@ -314,7 +331,9 @@ export class WebSocketManager {
    * This should be used when we hit an error and would like to restart the session.
    */
   private closeAndReconnect(closeReason: string) {
-    this._logVerbose(`begin closeAndReconnect with reason ${closeReason}`);
+    this._logVerbose(
+      `begin closeAndReconnect with reason ${closeReason}, socket state: ${this.socket.state}`,
+    );
     switch (this.socket.state) {
       case "disconnected":
       case "terminated":
@@ -398,7 +417,6 @@ export class WebSocketManager {
       case "ready": {
         const result = this.close();
         this.setSocketState({ state: "terminated" });
-        this._logVerbose(`socket state: ${this.socket.state}, paused: 'no'`);
         return result;
       }
       default: {
