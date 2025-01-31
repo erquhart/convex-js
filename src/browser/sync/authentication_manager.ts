@@ -7,6 +7,8 @@ import jwtDecode from "jwt-decode";
 // schedule about 24 days in the future.
 const MAXIMUM_REFRESH_DELAY = 20 * 24 * 60 * 60 * 1000; // 20 days
 
+const FETCH_TOKEN_RETRIES = 3;
+
 /**
  * An async function returning the JWT-encoded OpenID Connect Identity Token
  * if available.
@@ -206,7 +208,9 @@ export class AuthenticationManager {
   // in that we pause the WebSocket so that mutations
   // don't retry with bad auth.
   private async tryToReauthenticate(serverMessage: AuthError) {
-    // We only retry once, to avoid infinite retries
+    this._logVerbose(
+      `trying to reauthenticate: ${JSON.stringify(serverMessage)}`,
+    );
     if (
       // No way to fetch another token, kaboom
       this.authState.state === "noAuth" ||
@@ -372,14 +376,28 @@ export class AuthenticationManager {
     fetchArgs: {
       forceRefreshToken: boolean;
     },
-  ) {
+  ): Promise<{ isFromOutdatedConfig: boolean; value?: string | null }> {
+    // Retries are primarily to guard against network failures due to client
+    // being in background.
+    let retries = FETCH_TOKEN_RETRIES;
     const originalConfigVersion = ++this.configVersion;
-    const token = await fetchToken(fetchArgs);
-    if (this.configVersion !== originalConfigVersion) {
-      // This is a stale config
-      return { isFromOutdatedConfig: true };
+    try {
+      const token = await fetchToken(fetchArgs);
+      if (this.configVersion !== originalConfigVersion) {
+        // This is a stale config
+        return { isFromOutdatedConfig: true };
+      }
+      return { isFromOutdatedConfig: false, value: token };
+    } catch (e) {
+      if (retries <= 0) {
+        throw e;
+      }
     }
-    return { isFromOutdatedConfig: false, value: token };
+    retries--;
+    this._logVerbose(
+      `fetchTokenAndGuardAgainstRace failed, retry ${FETCH_TOKEN_RETRIES - retries + 1} of ${FETCH_TOKEN_RETRIES}`,
+    );
+    return await this.fetchTokenAndGuardAgainstRace(fetchToken, fetchArgs);
   }
 
   stop() {
