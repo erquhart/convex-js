@@ -263,7 +263,7 @@ export class AuthenticationManager {
       // lead to a false unauth state in the client. This could lead to an infinite
       // loop if the server returns expired tokens, so we fail immediately when
       // that occurs in `fetchTokenAndGuardAgainstRace`.
-      const tokenValiditySeconds = (token.expiresAt - Date.now()) / 1000;
+      const tokenValiditySeconds = Math.floor((token.expiresAt - Date.now()) / 1000);
       if (tokenValiditySeconds <= this.refreshTokenLeewaySeconds) {
         this.logger.error(
           "Cannot reauthenticate, token is already expired. Refetching the token.",
@@ -378,7 +378,7 @@ export class AuthenticationManager {
     if (this.authState.state === "noAuth") {
       return;
     }
-    const tokenValiditySeconds = (expiresAt - Date.now()) / 1000;
+    const tokenValiditySeconds = Math.floor((expiresAt - Date.now()) / 1000);
     if (tokenValiditySeconds <= 0) {
       this.logger.error(
         "Cannot refetch the token",
