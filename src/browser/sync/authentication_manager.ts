@@ -181,7 +181,7 @@ export class AuthenticationManager {
     }
     if (this.authState.state === "waitingForServerConfirmationOfFreshToken") {
       this._logVerbose("server confirmed new auth token is valid");
-      this.scheduleTokenRefetch(this.authState.token, this.authState.expiresAt);
+      this.scheduleTokenRefetch(this.authState.expiresAt);
       this.tokenConfirmationAttempts = 0;
       if (!this.authState.hadAuth) {
         this.authState.config.onAuthChange(true);
@@ -217,7 +217,7 @@ export class AuthenticationManager {
   // don't represent them as different states, but it is different
   // in that we pause the WebSocket so that mutations
   // don't retry with bad auth.
-  private async tryToReauthenticate(serverMessage: AuthError) {
+  private async tryToReauthenticate(serverMessage: AuthError): Promise<void> {
     this._logVerbose(`attempting to reauthenticate: ${serverMessage.error}`);
     if (
       // No way to fetch another token, kaboom
@@ -269,7 +269,7 @@ export class AuthenticationManager {
           "Cannot reauthenticate, token is already expired. Refetching the token.",
         );
         this._logVerbose(`tokenValiditySeconds: ${tokenValiditySeconds}`);
-        return;
+        return this.tryToReauthenticate(serverMessage);
       }
       this.authenticate(token.value);
       this.setAuthState({
@@ -374,7 +374,7 @@ export class AuthenticationManager {
     return tokenValiditySeconds;
   }
 
-  private scheduleTokenRefetch(token: string, expiresAt: number) {
+  private scheduleTokenRefetch(expiresAt: number) {
     if (this.authState.state === "noAuth") {
       return;
     }
