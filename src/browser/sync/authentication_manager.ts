@@ -239,10 +239,21 @@ export class AuthenticationManager {
       return;
     }
     if (this.authState.state === "waitingForServerConfirmationOfFreshToken") {
-      this.tokenConfirmationAttempts++;
-      this._logVerbose(
-        `retrying reauthentication, ${MAX_TOKEN_CONFIRMATION_ATTEMPTS - this.tokenConfirmationAttempts} attempts remaining`,
-      );
+      // Don't fail on a known expired token. A background browser tab or app can
+      // insert long periods of time between token fetching and token authentication,
+      // this is where we ensure this doesn't lead to a false unauth state in the
+      // client. This could lead to an infinite loop if the server returns expired
+      // tokens, so we fail immediately when that occurs in `fetchTokenAndGuardAgainstRace`.
+      if (this.authState.expiresAt <= Date.now()) {
+        this._logVerbose(
+          "Token unexpectedly expired, retrying without incrementing confirmation attempts",
+        );
+      } else {
+        this.tokenConfirmationAttempts++;
+        this._logVerbose(
+          `retrying reauthentication, ${MAX_TOKEN_CONFIRMATION_ATTEMPTS - this.tokenConfirmationAttempts} attempts remaining`,
+        );
+      }
     }
 
     await this.stopSocket();
@@ -257,20 +268,6 @@ export class AuthenticationManager {
     }
 
     if (token.value && this.syncState.isNewAuth(token.value)) {
-      // Don't attempt to authenticate a known expired token. A background
-      // browser tab or app can insert long periods of time between token
-      // fetching and token authentication, this is where we ensure this doesn't
-      // lead to a false unauth state in the client. This could lead to an infinite
-      // loop if the server returns expired tokens, so we fail immediately when
-      // that occurs in `fetchTokenAndGuardAgainstRace`.
-      const tokenValiditySeconds = Math.floor((token.expiresAt - Date.now()) / 1000);
-      if (tokenValiditySeconds <= this.refreshTokenLeewaySeconds) {
-        this.logger.error(
-          "Cannot reauthenticate, token is already expired. Refetching the token.",
-        );
-        this._logVerbose(`tokenValiditySeconds: ${tokenValiditySeconds}`);
-        return this.tryToReauthenticate(serverMessage);
-      }
       this.authenticate(token.value);
       this.setAuthState({
         state: "waitingForServerConfirmationOfFreshToken",
@@ -346,18 +343,14 @@ export class AuthenticationManager {
       // This is no longer really possible, because
       // we wait on server response before scheduling token refetch,
       // and the server currently requires JWT tokens.
-      this.logger.error(
-        "Auth token is not a valid JWT",
-      );
+      this.logger.error("Auth token is not a valid JWT");
       return 0;
     }
     // iat: issued at time, UTC seconds timestamp at which the JWT was issued
     // exp: expiration time, UTC seconds timestamp at which the JWT will expire
     const { iat, exp } = decodedToken as { iat?: number; exp?: number };
     if (!iat || !exp) {
-      this.logger.error(
-        "Auth token does not have required fields",
-      );
+      this.logger.error("Auth token does not have required fields");
       return 0;
     }
     // Because the client and server clocks may be out of sync,
@@ -366,9 +359,7 @@ export class AuthenticationManager {
     // will happen.
     const tokenValiditySeconds = exp - iat;
     if (tokenValiditySeconds <= 2) {
-      this.logger.error(
-        "Auth token does not live long enough",
-      );
+      this.logger.error("Auth token does not live long enough");
       return 0;
     }
     return tokenValiditySeconds;
@@ -380,9 +371,7 @@ export class AuthenticationManager {
     }
     const tokenValiditySeconds = Math.floor((expiresAt - Date.now()) / 1000);
     if (tokenValiditySeconds <= 0) {
-      this.logger.error(
-        "Cannot refetch the token",
-      )
+      this.logger.error("Cannot refetch the token");
       return;
     }
     // Attempt to refresh the token `refreshTokenLeewaySeconds` before it expires,
@@ -428,22 +417,30 @@ export class AuthenticationManager {
     const fetchedAt = Date.now();
     const token = await fetchToken(fetchArgs);
     const msSinceFetch = Date.now() - fetchedAt;
-    const tokenValiditySecondsTotal = token ? this.getTokenValiditySeconds(token) : 0;
-    const tokenValiditySeconds = tokenValiditySecondsTotal - (msSinceFetch / 1000);
-    this._logVerbose(JSON.stringify({ fetchedAt, msSinceFetch, tokenValiditySecondsTotal, tokenValiditySeconds }));
-    
+    const tokenValiditySecondsTotal = token
+      ? this.getTokenValiditySeconds(token)
+      : 0;
+    const tokenValiditySeconds =
+      tokenValiditySecondsTotal - msSinceFetch / 1000;
+    this._logVerbose(
+      JSON.stringify({
+        fetchedAt,
+        msSinceFetch,
+        tokenValiditySecondsTotal,
+        tokenValiditySeconds,
+      }),
+    );
+
     // If we ever get an already expired token on force refresh,
     // we bail out to avoid infinite retries.
     if (token && fetchArgs.forceRefreshToken) {
       this._logVerbose(`token validity seconds: ${tokenValiditySeconds}`);
       if (tokenValiditySeconds <= 0) {
-        this.logger.error(
-          "Server returned an expired token on force refresh.",
-        )
+        this.logger.error("Server returned an expired token on force refresh.");
         return { isFromOutdatedConfig: false };
       }
     }
-    
+
     if (this.configVersion !== originalConfigVersion) {
       // This is a stale config
       this._logVerbose(
@@ -451,7 +448,11 @@ export class AuthenticationManager {
       );
       return { isFromOutdatedConfig: true };
     }
-    return { isFromOutdatedConfig: false, value: token, expiresAt: Date.now() + tokenValiditySeconds * 1000 };
+    return {
+      isFromOutdatedConfig: false,
+      value: token,
+      expiresAt: Date.now() + tokenValiditySeconds * 1000,
+    };
   }
 
   stop() {
