@@ -428,7 +428,9 @@ export class AuthenticationManager {
     const fetchedAt = Date.now();
     const token = await fetchToken(fetchArgs);
     const msSinceFetch = Date.now() - fetchedAt;
-    const tokenValiditySeconds = (token ? this.getTokenValiditySeconds(token) : 0) - (msSinceFetch / 1000);
+    const tokenValiditySecondsTotal = token ? this.getTokenValiditySeconds(token) : 0;
+    const tokenValiditySeconds = tokenValiditySecondsTotal - (msSinceFetch / 1000);
+    this._logVerbose(JSON.stringify({ fetchedAt, msSinceFetch, tokenValiditySecondsTotal, tokenValiditySeconds }));
     
     // If we ever get an already expired token on force refresh,
     // we bail out to avoid infinite retries.
