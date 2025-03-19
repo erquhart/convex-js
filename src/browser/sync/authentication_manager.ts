@@ -370,17 +370,6 @@ export class AuthenticationManager {
       return;
     }
     const tokenValiditySeconds = Math.floor((expiresAt - Date.now()) / 1000);
-    if (tokenValiditySeconds <= 0) {
-      this._logVerbose(
-        JSON.stringify({
-          expiresAt,
-          tokenValiditySeconds,
-          now: Date.now(),
-        }),
-      );
-      this.logger.error("Cannot refetch the token");
-      return;
-    }
     // Attempt to refresh the token `refreshTokenLeewaySeconds` before it expires,
     // or immediately if the token is already expiring soon.
     let delay = Math.min(
