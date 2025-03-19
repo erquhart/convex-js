@@ -371,6 +371,13 @@ export class AuthenticationManager {
     }
     const tokenValiditySeconds = Math.floor((expiresAt - Date.now()) / 1000);
     if (tokenValiditySeconds <= 0) {
+      this._logVerbose(
+        JSON.stringify({
+          expiresAt,
+          tokenValiditySeconds,
+          now: Date.now(),
+        }),
+      );
       this.logger.error("Cannot refetch the token");
       return;
     }
