@@ -51,10 +51,7 @@ type AuthState =
       config: AuthConfig;
       hasRetried: boolean;
     }
-  | {
-      state: "initialRefetch";
-      config: AuthConfig;
-    }
+  | { state: "initialRefetch"; config: AuthConfig }
   | {
       state: "waitingForServerConfirmationOfFreshToken";
       config: AuthConfig;
@@ -69,10 +66,7 @@ type AuthState =
     }
   // Special/weird state when we got a valid token
   // but could not fetch a new one.
-  | {
-      state: "notRefetching";
-      config: AuthConfig;
-    };
+  | { state: "notRefetching"; config: AuthConfig };
 
 /**
  * Handles the state transitions for auth. The server is the source
@@ -108,10 +102,7 @@ export class AuthenticationManager {
       resumeSocket: () => void;
       clearAuth: () => void;
     },
-    config: {
-      refreshTokenLeewaySeconds: number;
-      logger: Logger;
-    },
+    config: { refreshTokenLeewaySeconds: number; logger: Logger },
   ) {
     this.syncState = syncState;
     this.authenticate = callbacks.authenticate;
@@ -259,9 +250,7 @@ export class AuthenticationManager {
     await this.stopSocket();
     const token = await this.fetchTokenAndGuardAgainstRace(
       this.authState.config.fetchToken,
-      {
-        forceRefreshToken: true,
-      },
+      { forceRefreshToken: true },
     );
     if (token.isFromOutdatedConfig) {
       return;
@@ -298,9 +287,7 @@ export class AuthenticationManager {
     this._logVerbose("refetching auth token");
     const token = await this.fetchTokenAndGuardAgainstRace(
       this.authState.config.fetchToken,
-      {
-        forceRefreshToken: true,
-      },
+      { forceRefreshToken: true },
     );
     if (token.isFromOutdatedConfig) {
       return;
@@ -402,9 +389,7 @@ export class AuthenticationManager {
   // while we're fetching a token
   private async fetchTokenAndGuardAgainstRace(
     fetchToken: AuthTokenFetcher,
-    fetchArgs: {
-      forceRefreshToken: boolean;
-    },
+    fetchArgs: { forceRefreshToken: boolean },
   ) {
     const originalConfigVersion = ++this.configVersion;
     this._logVerbose(
@@ -461,17 +446,6 @@ export class AuthenticationManager {
   }
 
   private setAuthState(newAuth: AuthState) {
-    const authStateForLog =
-      newAuth.state === "waitingForServerConfirmationOfFreshToken"
-        ? {
-            hadAuth: newAuth.hadAuth,
-            state: newAuth.state,
-            token: `...${newAuth.token.slice(-7)}`,
-          }
-        : { state: newAuth.state };
-    this._logVerbose(
-      `setting auth state to ${JSON.stringify(authStateForLog)}`,
-    );
     switch (newAuth.state) {
       case "waitingForScheduledRefetch":
       case "notRefetching":
@@ -493,6 +467,14 @@ export class AuthenticationManager {
       // Let the syncState know that auth is in a good state, so it can reset failure backoffs
       this.syncState.markAuthCompletion();
     }
+    this._logVerbose(
+      `setting auth state to ${JSON.stringify({
+        ...newAuth,
+        ...("token" in newAuth && typeof newAuth.token === "string"
+          ? { token: `...${newAuth.token.slice(-7)}` }
+          : {}),
+      })}`,
+    );
     this.authState = newAuth;
   }
 
