@@ -413,12 +413,12 @@ export class AuthenticationManager {
     const fetchedAt = Date.now();
     const token = await fetchToken(fetchArgs);
     const msSinceFetch = Date.now() - fetchedAt;
-    const fetchWasLagged = msSinceFetch > 60 * 1000;
     const tokenValiditySecondsTotal = token
       ? this.getTokenValiditySeconds(token)
       : 0;
     const tokenValiditySeconds =
       tokenValiditySecondsTotal - msSinceFetch / 1000;
+
     this._logVerbose(
       JSON.stringify({
         fetchedAt,
@@ -427,18 +427,6 @@ export class AuthenticationManager {
         tokenValiditySeconds,
       }),
     );
-
-    // If we ever get an already expired token on force refresh,
-    // we bail out to avoid infinite retries. If fetch took more than
-    // a minute, we assume execution was paused due to a background tab
-    // or app, so we skip this check to allow a refetch.
-    if (!fetchWasLagged && token && fetchArgs.forceRefreshToken) {
-      this._logVerbose(`token validity seconds: ${tokenValiditySeconds}`);
-      if (tokenValiditySeconds <= 0) {
-        this.logger.error("Server returned an expired token on force refresh.");
-        return { isFromOutdatedConfig: false };
-      }
-    }
 
     if (this.configVersion !== originalConfigVersion) {
       // This is a stale config
