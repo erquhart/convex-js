@@ -176,9 +176,12 @@ export class WebSocketManager {
       this.socket.state !== "disconnected" &&
       this.socket.state !== "stopped"
     ) {
-      throw new Error(
-        "Didn't start connection from disconnected state: " + this.socket.state,
+      // This can only happen from a scheduled reconnect kicking off at the
+      // wrong time. Log the error and bail, but don't throw.
+      this.logger.error(
+        `Didn't start connection from disconnected state: ${this.socket.state}, bailing`,
       );
+      return;
     }
 
     const ws = new this.webSocketConstructor(this.uri);
@@ -252,6 +255,8 @@ export class WebSocketManager {
           msg += `: ${event.reason}`;
         }
         this.logger.log(msg);
+      } else {
+        this._logVerbose(`WebSocket closed with code ${event.code}`);
       }
       this.scheduleReconnect();
       return;
@@ -321,7 +326,7 @@ export class WebSocketManager {
   }
 
   private scheduleReconnect() {
-    this.socket = { state: "disconnected" };
+    this.setSocketState({ state: "disconnected" });
     const backoff = this.nextBackoff();
     this.logger.log(`Attempting reconnect in ${backoff}ms`);
     setTimeout(() => this.connect(), backoff);
@@ -337,8 +342,10 @@ export class WebSocketManager {
       `begin closeAndReconnect with reason ${closeReason}, socket state: ${this.socket.state}`,
     );
     switch (this.socket.state) {
-      case "disconnected":
       case "terminated":
+        // Nothing to do if we're terminating.
+        return;
+      case "disconnected":
       case "stopped":
       case "connecting":
       case "ready": {
@@ -363,6 +370,9 @@ export class WebSocketManager {
    * closed socket is not accessible or used again after this method is called
    */
   private close(): Promise<void> {
+    this._logVerbose(
+      `close attempted with socket state: ${this.socket.state}`,
+    );
     switch (this.socket.state) {
       case "disconnected":
       case "terminated":
