@@ -51,7 +51,10 @@ type AuthState =
       config: AuthConfig;
       hasRetried: boolean;
     }
-  | { state: "initialRefetch"; config: AuthConfig }
+  | {
+      state: "initialRefetch";
+      config: AuthConfig;
+    }
   | {
       state: "waitingForServerConfirmationOfFreshToken";
       config: AuthConfig;
@@ -66,7 +69,10 @@ type AuthState =
     }
   // Special/weird state when we got a valid token
   // but could not fetch a new one.
-  | { state: "notRefetching"; config: AuthConfig };
+  | {
+      state: "notRefetching";
+      config: AuthConfig;
+    };
 
 /**
  * Handles the state transitions for auth. The server is the source
@@ -102,7 +108,10 @@ export class AuthenticationManager {
       resumeSocket: () => void;
       clearAuth: () => void;
     },
-    config: { refreshTokenLeewaySeconds: number; logger: Logger },
+    config: {
+      refreshTokenLeewaySeconds: number;
+      logger: Logger;
+    },
   ) {
     this.syncState = syncState;
     this.authenticate = callbacks.authenticate;
@@ -250,7 +259,9 @@ export class AuthenticationManager {
     await this.stopSocket();
     const token = await this.fetchTokenAndGuardAgainstRace(
       this.authState.config.fetchToken,
-      { forceRefreshToken: true },
+      {
+        forceRefreshToken: true,
+      },
     );
     if (token.isFromOutdatedConfig) {
       return;
@@ -287,7 +298,9 @@ export class AuthenticationManager {
     this._logVerbose("refetching auth token");
     const token = await this.fetchTokenAndGuardAgainstRace(
       this.authState.config.fetchToken,
-      { forceRefreshToken: true },
+      {
+        forceRefreshToken: true,
+      },
     );
     if (token.isFromOutdatedConfig) {
       return;
@@ -389,7 +402,9 @@ export class AuthenticationManager {
   // while we're fetching a token
   private async fetchTokenAndGuardAgainstRace(
     fetchToken: AuthTokenFetcher,
-    fetchArgs: { forceRefreshToken: boolean },
+    fetchArgs: {
+      forceRefreshToken: boolean;
+    },
   ) {
     const originalConfigVersion = ++this.configVersion;
     this._logVerbose(

@@ -23,7 +23,10 @@ type IConvexReactClient = {
  *
  * @public
  */
-export type ConvexAuthState = { isLoading: boolean; isAuthenticated: boolean };
+export type ConvexAuthState = {
+  isLoading: boolean;
+  isAuthenticated: boolean;
+};
 
 const ConvexAuthContext = createContext<ConvexAuthState>(undefined as any);
 
